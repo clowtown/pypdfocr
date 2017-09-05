@@ -346,7 +346,7 @@ class PyPdf(object):
 
           para = RotatedPara(escape(word.text.strip()), normal, textangle)
           para.wrapOn(pdf, para.minWidth(), 100)  # Not sure what to use as the height  here
-          para.drawOn(pdf, x*72/dpi, height - y*72/dpi)
+          para.drawOn(pdf, x*72/dpi['x'], height - y*72/dpi['y'])
 
 
 

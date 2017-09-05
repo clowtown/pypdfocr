@@ -57,16 +57,25 @@ class PyGs(object):
         self.binary = binary
 
         #self.tiff_dpi = 300
-        self.output_dpi = 300
+        
+        #clowjp 
+        #self.output_dpi = 300
+        self.output_xdpi = config.get('default_dpi',300)
+        self.output_ydpi = config.get('default_dpi',300)
+        self.minimum_dpi = config.get('minimum_dpi',None) #allow users to define None to set no minimum threshold
+        if self.minimum_dpi == 'None': #in the off chance they type None in the yaml input
+            self.minimum_dpi = None
+        #clowjp
+        
         self.greyscale = True
         # Tiff is used for the ocr, so just fix it at 300dpi
         #  The other formats will be used to create the final OCR'ed image, so determine
         #  the DPI by using pdfimages if available, o/w default to 200
         self.gs_options = {'tiff': ['tiff', ['-sDEVICE=tiff24nc','-r%(dpi)s' ]],
-                            'jpg': ['jpg', ['-sDEVICE=jpeg','-dJPEGQ=75', '-r%(dpi)s']],
-                            'jpggrey': ['jpg', ['-sDEVICE=jpeggray', '-dJPEGQ=75', '-r%(dpi)s']],
-                            'png': ['png', ['-sDEVICE=png16m', '-r%(dpi)s']],
-                            'pnggrey': ['png', ['-sDEVICE=pngmono', '-r%(dpi)s']],
+                            'jpg': ['jpg', ['-sDEVICE=jpeg','-dJPEGQ=75', '-r%(xdpi)sx%(ydpi)s']], #CLOWJP consider allowing -rXRESxYRES
+                            'jpggrey': ['jpg', ['-sDEVICE=jpeggray', '-dJPEGQ=75', '-r%(xdpi)sx%(ydpi)s']], #CLOWJP consider allowing -rXRESxYRES
+                            'png': ['png', ['-sDEVICE=png16m', '-r%(xdpi)sx%(ydpi)s']], #CLOWJP consider allowing -rXRESxYRES
+                            'pnggrey': ['png', ['-sDEVICE=pngmono', '-r%(xdpi)sx%(ydpi)s']], #CLOWJP consider allowing -rXRESxYRES
                             'tifflzw': ['tiff', ['-sDEVICE=tifflzw', '-r%(dpi)s']],
                             'tiffg4': ['tiff', ['-sDEVICE=tiffg4', '-r%(dpi)s']],
                             'pnm': ['pnm', ['-sDEVICE=pnmraw', '-r%(dpi)s']],
@@ -122,9 +131,9 @@ class PyGs(object):
         logging.info("Running pdfimages to figure out DPI...")
         logging.debug(cmd)
         try:
-            out = subprocess.check_output(cmd, shell=True)
+            out = subprocess.check_output(cmd)#CLOWJP REMOVED SHELL=TRUE, 'stderr=subprocess.STDOUT, shell=True' didn't work either
         except subprocess.CalledProcessError as e:
-            self._warn ("Could not execute pdfimages to calculate DPI (try installing xpdf or poppler?), so defaulting to %sdpi" % self.output_dpi) 
+            self._warn ("Could not execute pdfimages to calculate DPI (try installing xpdf or poppler?), so defaulting to %sx%sdpi" % (self.output_xdpi,self.output_xdpi)) 
             return
 
         # Need the second line of output
@@ -133,45 +142,65 @@ class PyGs(object):
         if len(results)<3:
             self._warn("Empty pdf, cannot determine dpi using pdfimages")
             return
-        results = results[2]
-        logging.debug(results)
-        results = results.split()
-        if(results[2] != 'image'):
-            self._warn("Could not understand output of pdfimages, please rerun with -d option and file an issue at http://github.com/virantha/pypdfocr/issues") 
-            return
-        x_pt, y_pt, greyscale = int(results[3]), int(results[4]), results[5]=='gray'
+        
+        #CLOWJP
+        logging.debug(out)
+        ## results = results[2] #CLOWJP we only use the first picture, which is not always the best representation of the pictures in the document
+        x_pt = 0
+        y_pt = 0 
+        greyscale = False
+        x_ppi = 0
+        y_ppi = 0
+        for result in results[2:]:
+            imgresult = result.split();
+            if(imgresult[2] != 'image'):
+                self._warn("Could not understand output of pdfimages, please rerun with -d option and file an issue at http://github.com/virantha/pypdfocr/issues") 
+                pass #go to next one
+            else:
+                # check if x or y are a new maximum, if so set results to this row.. (consider a freq to reduce rectangles trumping squares)
+                if(imgresult[3]> x_pt or imgresult[4] > y_pt):
+                    x_pt, y_pt, greyscale, x_ppi, y_ppi = int(imgresult[3]), int(imgresult[4]), imgresult[5]=='gray',int(imgresult[12]),int(imgresult[13])
+        #CLOWJP
         self.greyscale = greyscale
 
         # Now, run imagemagick identify to get pdf width/height/density
         cmd = 'identify -format "%%w %%x %%h %%y\n" "%s"' % pdf_filename
         try:
-            out = subprocess.check_output(cmd, shell=True)
-            results = out.splitlines()[0]
+            logging.debug(cmd)
+            out = subprocess.check_output(cmd) #CLOWJP REMOVED SHELL=TRUE, 'stderr=subprocess.STDOUT, shell=True' didn't work either
+            logging.debug(out)
+            #clowjp TODO check if identify ran... and use xppi/yppi as a proxy
+            results = out.splitlines()[0] #CLOWJP - we only use the first page, TODO consider doing this per page...
             results = results.replace("Undefined", "")
             width, xdensity, height, ydensity = [float(x) for x in results.split()]
-            xdpi = round(x_pt/width*xdensity)
-            ydpi = round(y_pt/height*ydensity)
-            self.output_dpi = xdpi
-            if ydpi>xdpi: self.output_dpi = ydpi
-            if self.output_dpi < 300: self.output_dpi = 300
-            if abs(xdpi-ydpi) > xdpi*.05:  # Make sure the two dpi's are within 5%
-                self._warn("X-dpi is %d, Y-dpi is %d, defaulting to %d" % (xdpi, ydpi, self.output_dpi))
-            else:
-                print("Using %d DPI" % self.output_dpi)
-
-
+            xdpi = int(round(x_pt/width*xdensity))
+            ydpi = int(round(y_pt/height*ydensity))
+            
         except Exception as e:
             logging.debug(str(e))
-            self._warn ("Could not execute identify to calculate DPI (try installing imagemagick?), so defaulting to %sdpi" % self.output_dpi) 
+            self._warn ("Could not execute identify to calculate DPI (try installing imagemagick?), so defaulting to ppi %d x %d)"%(x_ppi,y_ppi)) 
+            xdpi = x_ppi
+            ydpi = y_ppi
+        self.output_xdpi = xdpi
+        self.output_ydpi = ydpi
+        
+        if self.minimum_dpi != None and self.output_xdpi < self.minimum_dpi: 
+            self._warn("X-dpi is %s, X-ppi is %s, Y-ppi is %s, defaulting to %s" % (xdpi, x_ppi, y_ppi, self.minimum_dpi))
+            self.output_xdpi = self.minimum_dpi
+        if self.minimum_dpi != None and self.output_ydpi < self.minimum_dpi: 
+            self._warn("Y-dpi is %s, X-ppi is %s, Y-ppi is %s, defaulting to %s" % (ydpi, x_ppi, y_ppi, self.minimum_dpi))
+            self.output_ydpi = self.minimum_dpi
+        #if abs(xdpi-ydpi) > xdpi*.05:  # Make sure the two dpi's are within 5%
+        #    self._warn("X-dpi is %d, Y-dpi is %d, defaulting to %d" % (xdpi, ydpi, self.output_dpi))
+        #else:
+        print("Using X %d and Y %d DPI" % (self.output_xdpi,self.output_ydpi))
         return
-
-
 
     def _run_gs(self, options, output_filename, pdf_filename):
         try:
             cmd = '%s -q -dNOPAUSE %s -sOutputFile="%s" "%s" -c quit' % (self.binary, options, output_filename, pdf_filename)
             logging.info(cmd)        
-            out = subprocess.check_output(cmd, shell=True)
+            out = subprocess.check_output(cmd) #CLOWJP REMOVED SHELL=TRUE, 'stderr=subprocess.STDOUT, shell=True' didn't work either
 
         except subprocess.CalledProcessError as e:
             print e.output
@@ -210,10 +239,10 @@ class PyGs(object):
         for fn in glob.glob(globable_filename):
             os.remove(fn)
 
-        options = ' '.join(self.gs_options[self.img_format][1]) % {'dpi':self.output_dpi}
+        options = ' '.join(self.gs_options[self.img_format][1]) % {'xdpi':self.output_xdpi,'ydpi':self.output_ydpi}
         output_filename = '%s_%%d.%s' % (filename, self.img_file_ext)
         self._run_gs(options, output_filename, pdf_filename)
         for fn in glob.glob(globable_filename):
             logging.info("Created image %s" % fn)
-        return (self.output_dpi, globable_filename)
+        return ({'x':self.output_xdpi,'y':self.output_ydpi}, globable_filename)
 
