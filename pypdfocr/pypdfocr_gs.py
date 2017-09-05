@@ -65,6 +65,8 @@ class PyGs(object):
         self.minimum_dpi = config.get('minimum_dpi',None) #allow users to define None to set no minimum threshold
         if self.minimum_dpi == 'None': #in the off chance they type None in the yaml input
             self.minimum_dpi = None
+            
+        self.imageTypes = config.get('imageTypes',['image'])
         #clowjp
         
         self.greyscale = True
@@ -133,7 +135,7 @@ class PyGs(object):
         try:
             out = subprocess.check_output(cmd)#CLOWJP REMOVED SHELL=TRUE, 'stderr=subprocess.STDOUT, shell=True' didn't work either
         except subprocess.CalledProcessError as e:
-            self._warn ("Could not execute pdfimages to calculate DPI (try installing xpdf or poppler?), so defaulting to %sx%sdpi" % (self.output_xdpi,self.output_xdpi)) 
+            self._warn ("Could not execute pdfimages to calculate DPI (try installing xpdf or poppler?), so defaulting to %sx%sdpi" % (self.output_xdpi,self.output_ydpi)) 
             return
 
         # Need the second line of output
@@ -153,8 +155,8 @@ class PyGs(object):
         y_ppi = 0
         for result in results[2:]:
             imgresult = result.split();
-            if(imgresult[2] != 'image'):
-                self._warn("Could not understand output of pdfimages, please rerun with -d option and file an issue at http://github.com/virantha/pypdfocr/issues") 
+            if(imgresult[2] not in self.imageTypes):
+                self._warn("Could not understand output of pdfimages %s, please rerun with -d option and file an issue at http://github.com/virantha/pypdfocr/issues"%imgresult[2]) 
                 pass #go to next one
             else:
                 # check if x or y are a new maximum, if so set results to this row.. (consider a freq to reduce rectangles trumping squares)
@@ -174,13 +176,15 @@ class PyGs(object):
             results = results.replace("Undefined", "")
             width, xdensity, height, ydensity = [float(x) for x in results.split()]
             xdpi = int(round(x_pt/width*xdensity))
-            ydpi = int(round(y_pt/height*ydensity))
-            
+            ydpi = int(round(y_pt/height*ydensity))            
         except Exception as e:
             logging.debug(str(e))
             self._warn ("Could not execute identify to calculate DPI (try installing imagemagick?), so defaulting to ppi %d x %d)"%(x_ppi,y_ppi)) 
             xdpi = x_ppi
             ydpi = y_ppi
+        if xdpi <= 0 or ydpi <= 0: #when pdfimages/imagemagick returns no good data or errored. 
+            xdpi = self.output_xdpi
+            ydpi = self.output_ydpi
         self.output_xdpi = xdpi
         self.output_ydpi = ydpi
         
