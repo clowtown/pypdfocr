@@ -27,7 +27,7 @@ import glob
 
 def error(text):
     print("ERROR: %s" % text)
-    exit(-1)
+    #exit(-1)
 
 class PyGs(object):
     """Class to wrap all the ghostscript calls"""
@@ -67,6 +67,8 @@ class PyGs(object):
             self.minimum_dpi = None
             
         self.imageTypes = config.get('imageTypes',['image'])
+        
+        self.usePPI = config.get('use_ppi',False)
         #clowjp
         
         self.greyscale = True
@@ -164,24 +166,27 @@ class PyGs(object):
                     x_pt, y_pt, greyscale, x_ppi, y_ppi = int(imgresult[3]), int(imgresult[4]), imgresult[5]=='gray',int(imgresult[12]),int(imgresult[13])
         #CLOWJP
         self.greyscale = greyscale
-
-        # Now, run imagemagick identify to get pdf width/height/density
-        cmd = 'identify -format "%%w %%x %%h %%y\n" "%s"' % pdf_filename
-        try:
-            logging.debug(cmd)
-            out = subprocess.check_output(cmd) #CLOWJP REMOVED SHELL=TRUE, 'stderr=subprocess.STDOUT, shell=True' didn't work either
-            logging.debug(out)
-            #clowjp TODO check if identify ran... and use xppi/yppi as a proxy
-            results = out.splitlines()[0] #CLOWJP - we only use the first page, TODO consider doing this per page...
-            results = results.replace("Undefined", "")
-            width, xdensity, height, ydensity = [float(x) for x in results.split()]
-            xdpi = int(round(x_pt/width*xdensity))
-            ydpi = int(round(y_pt/height*ydensity))            
-        except Exception as e:
-            logging.debug(str(e))
-            self._warn ("Could not execute identify to calculate DPI (try installing imagemagick?), so defaulting to ppi %d x %d)"%(x_ppi,y_ppi)) 
+        if self.usePPI:
             xdpi = x_ppi
             ydpi = y_ppi
+        else:
+            # Now, run imagemagick identify to get pdf width/height/density
+            cmd = 'identify -format "%%w %%x %%h %%y\n" "%s"' % pdf_filename
+            try:
+                logging.debug(cmd)
+                out = subprocess.check_output(cmd) #CLOWJP REMOVED SHELL=TRUE, 'stderr=subprocess.STDOUT, shell=True' didn't work either
+                logging.debug(out)
+                #clowjp TODO check if identify ran... and use xppi/yppi as a proxy
+                results = out.splitlines()[0] #CLOWJP - we only use the first page, TODO consider doing this per page...
+                results = results.replace("Undefined", "")
+                width, xdensity, height, ydensity = [float(x) for x in results.split()]
+                xdpi = int(round(x_pt/width*xdensity))
+                ydpi = int(round(y_pt/height*ydensity))            
+            except Exception as e:
+                logging.debug(str(e))
+                self._warn ("Could not execute identify to calculate DPI (try installing imagemagick?), so defaulting to ppi %d x %d)"%(x_ppi,y_ppi)) 
+                xdpi = x_ppi
+                ydpi = y_ppi
         if xdpi <= 0 or ydpi <= 0: #when pdfimages/imagemagick returns no good data or errored. 
             xdpi = self.output_xdpi
             ydpi = self.output_ydpi
