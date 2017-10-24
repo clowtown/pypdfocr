@@ -45,6 +45,7 @@ class PyTesseract(object):
            Detect windows tesseract location.  
         """
         self.lang = 'eng'
+        self.psm = '1'
         self.required = "3.02.02"
         self.threads = config.get('threads',4)
 
@@ -63,6 +64,8 @@ class PyTesseract(object):
 
         self.binary = binary
 
+        if "psm" in config: #override default psm of 1
+            self.psm = config['psm']
         self.msgs = {
             'TS_MISSING': """ 
                 Could not execute %s
@@ -160,7 +163,7 @@ class PyTesseract(object):
             error(self.msgs['TS_img_MISSING'] + " %s" % (img_filename))
 
         logging.info("Running OCR on %s to create %s.html" % (img_filename, basename))
-        cmd = '%s "%s" "%s" -l %s -psm 1 -c hocr_font_info=1  hocr' % (self.binary, img_filename, basename, self.lang)
+        cmd = '%s "%s" "%s" -l %s -psm %s -c hocr_font_info=1  hocr' % (self.binary, img_filename, basename, self.lang,self.psm)
         logging.info(cmd)
         try:
             ret_output = subprocess.check_output(cmd, shell=True,  stderr=subprocess.STDOUT)
