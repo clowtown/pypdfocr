@@ -145,6 +145,9 @@ class PyPDFOCR(object):
         p.add_argument('--skip-preprocess', action='store_true',
                 default=False, dest='skip_preprocess', help='DEPRECATED: always skips now.')
 
+        p.add_argument('-q', '--consume-fileremoval-exceptions', action='store_true',
+            default=False, dest='consumeFrExceptions', help='Allow process to complete when files are locked during attempted removal')
+
         #---------
         # Single or watch mode
         #--------
@@ -181,7 +184,7 @@ class PyPDFOCR(object):
         self.watch_dir = args.watch_dir
         self.enable_email = args.mail
         self.match_using_filename = args.match_using_filename
-
+        self.consumeFrExceptions = args.consumeFrExceptions
 
         # Deprecating skip_preprocess to make skipping the default (always true). Tesseract 3.04 is so much better now
         # at handling non-ideal inputs and lines
@@ -318,7 +321,7 @@ class PyPDFOCR(object):
 
         self.gs = PyGs(self.config.get('ghostscript',{}))
         self.ts = PyTesseract(self.config.get('tesseract',{}))
-        self.pdf = PyPdf(self.gs)
+        self.pdf = PyPdf(self.gs,self.consumeFrExceptions)
         self.preprocess = PyPreprocess(self.config.get('preprocess', {}))
 
         return

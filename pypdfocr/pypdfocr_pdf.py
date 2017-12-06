@@ -85,9 +85,9 @@ class PyPdf(object):
     regex_fontspec = re.compile('x_font\s+(.+);\s+x_fsize\s+(\d+)')
     regex_textangle = re.compile('textangle\s+(\d+)')
 
-    def __init__(self, gs):
+    def __init__(self, gs, consumeFrExceptions):
         self.gs = gs # Pointer to ghostscript object
-
+        self.consumeFrExceptions = consumeFrExceptions #clumsily passing down the debug option
 
     def get_transform(self, rotation, tx, ty):
         # Code taken from here:
@@ -172,13 +172,18 @@ class PyPdf(object):
 
         orig.close()
         text_file.close()
-
-        # Windows sometimes locks the temp text file for no reason, so we need to retry a few times to delete
-        for fn in text_pdf_filenames:
-            #os.remove(fn)
-            Retry(partial(os.remove, fn), tries=10, pause=3).call_with_retry() 
-
-        os.remove(all_text_filename)
+        try:
+            # Windows sometimes locks the temp text file for no reason, so we need to retry a few times to delete
+            for fn in text_pdf_filenames:
+                #os.remove(fn)
+                Retry(partial(os.remove, fn), tries=10, pause=3).call_with_retry() 
+    
+            os.remove(all_text_filename)
+        except Exception as e:
+            if not self.consumeFrExceptions: #blocking this via debug flag like what is done in core module
+                raise e
+            else:
+                logging.info("Failed removing temp file,but exception consumed")
         logging.info("Created OCR'ed pdf as %s" % (pdf_filename))
 
         return pdf_filename
